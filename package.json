@@ -1,0 +1,11 @@
+{
+  "name": "sprite-sheet-studio",
+  "displayName": "Sprite Sheet Studio",
+  "description": "Build custom sprite sheets from PNGs, with drag-and-drop arrangement, animation preview, and selective recoloring.",
+  "version": "1.8.0",
+  "author": { "name": "eddylaucheukwa-cloud" },
+  "publisher": "eddylaucheukwa-cloud",
+  "license": "MIT",
+  "categories": ["Scripts"],
+  "contributes": { "scripts": [{ "path": "./main.lua" }] }
+}

@@ -1,0 +1,72 @@
+local root=app.params.root
+local E=dofile(app.fs.joinPath(root,'effects.lua'))
+local M=dofile(app.fs.joinPath(root,'core.lua'))
+local frames=E.frames('5-8, 8, 7-5',40)
+assert(table.concat(frames,',')=='5,6,7,8,8,7,6,5')
+assert(E.frameText({1,2,3,5,6,9})=='1-3,5-6,9')
+for _,invalid in ipairs({'','0','41','5,,6','5-','5.5','5,'}) do assert(not pcall(E.frames,invalid,40)) end
+local frame,running=E.advance(4,4,true); assert(frame==1 and running)
+frame,running=E.advance(4,4,false); assert(frame==4 and not running)
+local pc=app.pixelColor
+local image=Image(64,64,ColorMode.RGB)
+image:drawPixel(1,1,pc.rgba(200,20,20,255))
+image:drawPixel(2,1,pc.rgba(190,20,20,127))
+image:drawPixel(3,1,pc.rgba(10,10,200,255))
+image:drawPixel(4,1,pc.rgba(99,22,33,0))
+local original=Image(image)
+assert(E.transform(image,{}):isEqual(image),'Neutral adjustments must be lossless')
+local settings={pickedOnly=true,source=Color{r=200,g=20,b=20},hue=120,tolerance=0}
+local result,count=E.transform(image,settings)
+assert(count==1 and result:getPixel(1,1)==pc.rgba(20,200,20,255),'120 degree hue shift must map red to green')
+assert(result:getPixel(2,1)==image:getPixel(2,1) and result:getPixel(3,1)==image:getPixel(3,1))
+settings.tolerance=3
+result,count=E.transform(image,settings)
+assert(count==2 and pc.rgbaA(result:getPixel(2,1))==127,'Tolerance must include similar RGB colors and preserve alpha')
+assert(result:getPixel(4,1)==image:getPixel(4,1),'Transparent pixels must remain untouched')
+settings.tolerance=100
+result,count=E.transform(image,settings); assert(count==3)
+settings={pickedOnly=true,source=Color{r=200,g=20,b=20},replace=true,target=Color{r=1,g=2,b=3}}
+result,count=E.transform(image,settings)
+assert(result:getPixel(1,1)==pc.rgba(1,2,3,255) and count==1)
+result=E.transform(image,{saturation=-100})
+assert(pc.rgbaR(result:getPixel(1,1))==pc.rgbaG(result:getPixel(1,1)))
+result=E.transform(image,{contrast=-100})
+assert(result:getPixel(1,1)==pc.rgba(128,128,128,255))
+result=E.transform(image,{brightness=100})
+assert(result:getPixel(2,1)==pc.rgba(255,255,255,127))
+assert(image:isEqual(original),'Live preview must never modify source images')
+local state=M.newSheet{{name='A',image=image},{name='B',image=Image(image)}}
+app.activeSprite=state.sprite
+assert(E.apply(state,{[1]=true},{hue=120}))
+assert(not state.slots[1].image:isEqual(original) and state.slots[2].image:isEqual(original),'Scope must preserve unselected sprites')
+app.command.Undo(); state=M.fromSprite(state.sprite)
+assert(state.slots[1].image:isEqual(original))
+assert(not E.apply(state,{[1]=true},{}),'Neutral recolor must not add Undo history')
+local small=Image(63,64,ColorMode.RGB)
+local smallState=M.newSheet{{name='Small cel',image=Image(64,64,ColorMode.RGB)}}
+smallState.slots[1].image=small
+assert(M.cellImage(smallState,1).width==64,'Cropped cels must be padded, not stretched')
+local flat=M.newSheet{{name='Flat',image=Image(64,64,ColorMode.RGB)}}
+flat.slots[1].image=Image(256,640,ColorMode.RGB)
+assert(not pcall(M.fromSprite,flat.sprite),'Flattened builder layers must be detected for splitting')
+print('PASS: range parsing/repeats/reverse, looping, exact/tolerant color matching, hue/saturation/brightness/contrast/replacement, alpha, read-only preview, selected scope, Undo, cropped/flattened cels')
+
+local gray=Sprite(256,640,ColorMode.GRAY)
+gray.cels[1].image:drawPixel(4,5,pc.graya(90,127))
+local grayCopy=M.editSheet(gray)
+assert(grayCopy.sprite.colorMode==ColorMode.RGB and #grayCopy.sprite.layers==40)
+assert(Image(grayCopy.sprite):getPixel(4,5)==pc.rgba(90,90,90,127),'Gray split must preserve brightness and alpha')
+assert(gray.colorMode==ColorMode.GRAY,'Conversion must leave the original sheet unchanged')
+local indexed=Sprite(256,640,ColorMode.INDEXED)
+indexed.palettes[1]:setColor(1,Color{r=50,g=70,b=90,a=127})
+indexed.cels[1].image:drawPixel(4,5,1)
+local indexedCopy=M.editSheet(indexed)
+assert(Image(indexedCopy.sprite):getPixel(4,5)==pc.rgba(50,70,90,127),'Indexed split must render the source palette and alpha')
+assert(indexed.colorMode==ColorMode.INDEXED)
+assert(M.editSheet(indexedCopy.sprite).sprite==indexedCopy.sprite,'An editable builder sheet must be reused')
+local animated=Sprite(256,640,ColorMode.RGB)
+animated:newFrame()
+assert(not pcall(M.editSheet,animated),'Multi-frame sheets must not silently lose frames')
+local wrongSize=Sprite(256,600,ColorMode.RGB)
+assert(not pcall(M.editSheet,wrongSize),'Non-256x640 sheets must not be silently resized')
+print('PASS: indexed/grayscale flattened conversion, alpha/palette preservation, editable reuse, multi-frame and wrong-size guards')

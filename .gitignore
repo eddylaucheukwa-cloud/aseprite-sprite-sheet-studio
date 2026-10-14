@@ -1,0 +1,5 @@
+dist/
+test-output/
+*.log
+*-results.txt
+*-errors.txt
